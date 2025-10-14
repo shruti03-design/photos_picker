@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "scheme": "shrutigooglephotospicker",
+    "android": {
+      "package": "com.shruti_google_photos_picker",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "shrutigooglephotospicker",
+              "host": "oauth-callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}
