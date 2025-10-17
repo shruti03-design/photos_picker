@@ -2,21 +2,43 @@
   "expo": {
     "name": "Google Drive Picker",
     "slug": "google-drive-picker",
-    "scheme": "googledrivepicker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shrutigooglephotospicker"
+    },
     "android": {
-      "package": "com.googledrivepicker",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.shruti-google-photos-picker",
       "intentFilters": [
         {
           "action": "VIEW",
+          "autoVerify": true,
           "data": [
             {
-              "scheme": "googledrivepicker",
-              "host": "oauth-callback"
+              "scheme": "com.shruti-google-photos-picker"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     }
   }
 }

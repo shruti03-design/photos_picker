@@ -2,10 +2,16 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 
-// Use localhost for both web and Android (with adb reverse)
+// Determine a sensible API base depending on platform/environment.
+// - Android emulator (classic AVD) can reach host machine at 10.0.2.2
+// - If you're using adb reverse, localhost:3000 will work on emulator
+// - For physical devices, use your machine IP (or expose backend via ngrok)
 const getApiBaseUrl = () => {
-  // Both web and Android emulator will use localhost
-  // Make sure to run: adb reverse tcp:3000 tcp:3000
+  if (Platform.OS === 'android') {
+    // Prefer Android emulator host shortcut which works without adb reverse
+    return 'http://10.0.2.2:3000/api';
+  }
+  // default to localhost for web and ios simulator
   return 'http://localhost:3000/api';
 };
 
@@ -19,9 +25,6 @@ console.log('🔧 [API] Backend URL:', API_BASE);
 const apiClient = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 // Request interceptor
@@ -73,21 +76,33 @@ apiClient.interceptors.response.use(
 // Test connection
 export async function testConnection() {
   console.log('🧪 [API] Testing connection to backend...');
-  try {
-    const response = await axios.get(`${API_BASE.replace('/api', '')}/health`, {
-      timeout: 5000,
-    });
-    console.log('✅ [API] Backend is reachable!', response.data);
-    return true;
-  } catch (error) {
-    console.error('❌ [API] Backend NOT reachable!');
-    console.error('❌ [API] Error:', error.message);
-    console.error('❌ [API] Make sure:');
-    console.error('❌ [API] 1. Backend is running on port 3000');
-    console.error('❌ [API] 2. Run: adb reverse tcp:3000 tcp:3000');
-    return false;
+  // Try a few candidate hosts to help development on different setups.
+  const hosts = [
+    `${API_BASE.replace('/api', '')}`,
+    'http://localhost:3000',
+    'http://10.0.2.2:3000',
+  ];
+
+  for (const host of hosts) {
+    try {
+      console.log(`🧪 [API] Trying health on ${host}/health`);
+      const response = await axios.get(`${host}/health`, { timeout: 3000 });
+      console.log('✅ [API] Backend is reachable at', host, response.data);
+      return true;
+    } catch (err) {
+      console.warn('⚠️ [API] No response from', host, err.message);
+    }
   }
+
+  console.error('❌ [API] Backend NOT reachable!');
+  console.error('❌ [API] Tried hosts:', hosts.join(', '));
+  console.error('❌ [API] Make sure:');
+  console.error('❌ [API] 1. Backend is running on port 3000');
+  console.error('❌ [API] 2. For Android emulator, either run adb reverse tcp:3000 tcp:3000 OR use the AVD host 10.0.2.2');
+  console.error('❌ [API] 3. For a physical device, use your machine IP (e.g. http://192.168.x.y:3000) and allow firewall access');
+  return false;
 }
+
 
 export async function getOAuthUrl() {
   console.log('🚀 [API] getOAuthUrl: Starting...');

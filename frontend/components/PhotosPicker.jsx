@@ -27,6 +27,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function PhotosPicker() {
   const [sessionId, setSessionId] = useState(null);
+  const [lastDeepLink, setLastDeepLink] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [pollingPickerSessionId, setPollingPickerSessionId] = useState(null);
@@ -83,16 +84,31 @@ export default function PhotosPicker() {
     console.log('🔗 [PhotosPicker] Full URL:', url);
     
     try {
+      // Expo may wrap the actual deep link in a `url` query param, e.g.:
+      // exp://.../?url=shrutigooglephotospicker://oauth-callback?sessionId=...
+      try {
+        const maybeUrl = new URL(url);
+        const nested = maybeUrl.searchParams.get('url');
+        if (nested) {
+          console.log('🔗 [PhotosPicker] Unwrapped nested URL:', nested);
+          url = nested;
+        }
+      } catch (e) {
+        // Not a full URL object, proceed with original string
+      }
+
       if (url.includes('oauth-callback')) {
         console.log('✅ [PhotosPicker] OAuth callback detected');
-        
+        setLastDeepLink(url);
+
         // Parse URL parameters
         const urlParts = url.split('?');
         if (urlParts.length < 2) {
           console.error('❌ [PhotosPicker] No query parameters in URL');
+          setLoading(false);
           return;
         }
-        
+
         const params = new URLSearchParams(urlParts[1]);
         const returnedSessionId = params.get('sessionId');
         const success = params.get('success');
@@ -113,16 +129,17 @@ export default function PhotosPicker() {
         
         if (returnedSessionId && success === 'true') {
           console.log('✅ [PhotosPicker] Got valid sessionId:', returnedSessionId);
-          
+
           // Store session ID
           await AsyncStorage.setItem('google_session_id', returnedSessionId);
           console.log('💾 [PhotosPicker] Stored sessionId in AsyncStorage');
-          
+
           // Update state
           setSessionId(returnedSessionId);
+          setLastDeepLink(url);
           setAuthenticated(true);
           setLoading(false);
-          
+
           console.log('✅ [PhotosPicker] Authentication successful!');
           Alert.alert('Success', 'Signed in successfully!');
         } else {
@@ -298,6 +315,14 @@ export default function PhotosPicker() {
         <Text style={styles.title}>Google Photos Picker</Text>
         <Text style={styles.platform}>Platform: {Platform.OS}</Text>
 
+        {/* Debug info */}
+        <View style={styles.debugBox}>
+          <Text style={styles.debugLabel}>Last deep link:</Text>
+          <Text style={styles.debugText} numberOfLines={1}>{lastDeepLink || 'none'}</Text>
+          <Text style={styles.debugLabel}>Stored sessionId:</Text>
+          <Text style={styles.debugText} numberOfLines={1}>{sessionId || 'none'}</Text>
+        </View>
+
         {!authenticated ? (
           <TouchableOpacity
             style={styles.button}
@@ -408,4 +433,14 @@ const styles = StyleSheet.create({
   },
   photoImage: { width: '100%', height: 150 },
   photoFilename: { padding: 8, fontSize: 12, color: '#666' },
+  debugBox: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: '#fff8e1',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ffe082',
+  },
+  debugLabel: { fontSize: 10, color: '#666' },
+  debugText: { fontSize: 12, color: '#333' },
 });
