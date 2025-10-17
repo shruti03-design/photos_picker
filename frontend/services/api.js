@@ -2,18 +2,11 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 
-// Determine API base URL based on platform
+// Use localhost for both web and Android (with adb reverse)
 const getApiBaseUrl = () => {
-  if (Platform.OS === 'web') {
-    // For web, use localhost
-    return 'http://localhost:3000/api';
-  } else if (Platform.OS === 'android') {
-    // For Android emulator, use 10.0.2.2
-    return 'http://10.0.2.2:3000/api';
-  } else {
-    // For iOS or other
-    return 'http://localhost:3000/api';
-  }
+  // Both web and Android emulator will use localhost
+  // Make sure to run: adb reverse tcp:3000 tcp:3000
+  return 'http://localhost:3000/api';
 };
 
 const API_BASE = getApiBaseUrl();
@@ -89,7 +82,9 @@ export async function testConnection() {
   } catch (error) {
     console.error('❌ [API] Backend NOT reachable!');
     console.error('❌ [API] Error:', error.message);
-    console.error('❌ [API] Make sure backend is running on port 3000');
+    console.error('❌ [API] Make sure:');
+    console.error('❌ [API] 1. Backend is running on port 3000');
+    console.error('❌ [API] 2. Run: adb reverse tcp:3000 tcp:3000');
     return false;
   }
 }
@@ -100,7 +95,7 @@ export async function getOAuthUrl() {
   
   try {
     const response = await apiClient.get('/oauth/url', {
-      params: { platform: Platform.OS }  // ← Add this
+      params: { platform: Platform.OS }
     });
     console.log('✅ [API] getOAuthUrl: Success!');
     return response.data;

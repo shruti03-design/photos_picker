@@ -1,25 +1,10 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const config = require('../config/config');
-const os = require('os');
 
 console.log('📦 [GoogleAuth] Module loaded');
 
 const activeSessions = new Map();
-
-// Get local IP address
-function getLocalIpAddress() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      // Skip internal and non-IPv4 addresses
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
-}
 
 function generateOAuthUrl(platform = 'web') {
   console.log('\n🚀 [GoogleAuth] Generating OAuth URL...');
@@ -27,15 +12,10 @@ function generateOAuthUrl(platform = 'web') {
   
   const sessionId = crypto.randomUUID();
   
-  // Use different redirect URI for Android
-  let redirectUri;
-  if (platform === 'android') {
-    const localIp = getLocalIpAddress();
-    redirectUri = `http://${localIp}:3000/api/oauth/callback`;
-    console.log('📱 [GoogleAuth] Using local IP for Android:', localIp);
-  } else {
-    redirectUri = config.redirectUri;
-  }
+  // Always use localhost:3000 (works for both web and Android with adb reverse)
+  const redirectUri = 'http://localhost:3000/api/oauth/callback';
+  
+  console.log('🔗 [GoogleAuth] Redirect URI:', redirectUri);
   
   // Encode state with platform info
   const stateData = JSON.stringify({ sessionId, platform });
@@ -53,8 +33,6 @@ function generateOAuthUrl(platform = 'web') {
   
   console.log('✅ [GoogleAuth] OAuth URL generated');
   console.log('🔑 [GoogleAuth] SessionId:', sessionId);
-  console.log('📱 [GoogleAuth] Platform:', platform);
-  console.log('🔗 [GoogleAuth] Redirect URI:', redirectUri);
   
   return { oauthUrl, sessionId };
 }
@@ -64,14 +42,8 @@ async function exchangeCodeForTokens(code, sessionId, platform = 'web') {
   console.log('🔑 [GoogleAuth] Code:', code.substring(0, 20) + '...');
   console.log('📱 [GoogleAuth] Platform:', platform);
   
-  // Use platform-appropriate redirect URI
-  let redirectUri;
-  if (platform === 'android') {
-    const localIp = getLocalIpAddress();
-    redirectUri = `http://${localIp}:3000/api/oauth/callback`;
-  } else {
-    redirectUri = config.redirectUri;
-  }
+  // Always use localhost:3000 (works for both web and Android with adb reverse)
+  const redirectUri = 'http://localhost:3000/api/oauth/callback';
   
   console.log('🔗 [GoogleAuth] Using redirect URI:', redirectUri);
   

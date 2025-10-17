@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -31,61 +31,110 @@ export default function PhotosPicker() {
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [pollingPickerSessionId, setPollingPickerSessionId] = useState(null);
   const [authenticated, setAuthenticated] = useState(false);
+  const linkingListenerRef = useRef(null);
 
-  console.log('📱 [PhotosPicker] Platform:', Platform.OS);
+  console.log('📱 [PhotosPicker] Component render, Platform:', Platform.OS);
 
   useEffect(() => {
-    console.log('🔄 [PhotosPicker] Mounting, checking auth...');
+    console.log('🔄 [PhotosPicker] Mounting component...');
     checkAuthStatus();
     
-    // Add deep link listener for Android
-    if (Platform.OS === 'android') {
-      const subscription = Linking.addEventListener('url', handleDeepLink);
-      
-      // Check if app was opened via deep link
-      Linking.getInitialURL().then(url => {
-        if (url) {
-          console.log('🔗 [PhotosPicker] Initial URL:', url);
-          handleDeepLink({ url });
-        }
-      });
-      
-      return () => subscription.remove();
-    }
+    // Set up deep link listener
+    console.log('🔗 [PhotosPicker] Setting up deep link listener...');
+    
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    linkingListenerRef.current = subscription;
+    
+    // Check if app was opened via deep link (app was closed)
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        console.log('🔗 [PhotosPicker] App opened with initial URL:', url);
+        handleDeepLink({ url });
+      } else {
+        console.log('🔗 [PhotosPicker] No initial URL');
+      }
+    }).catch(err => {
+      console.error('❌ [PhotosPicker] Error getting initial URL:', err);
+    });
+    
+    return () => {
+      console.log('🔄 [PhotosPicker] Unmounting, cleaning up listeners...');
+      if (linkingListenerRef.current) {
+        linkingListenerRef.current.remove();
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (pollingPickerSessionId && sessionId) {
-      console.log('⏱️ [PhotosPicker] Starting polling');
+      console.log('⏱️ [PhotosPicker] Starting polling for picker session');
       const interval = setInterval(() => {
         checkPickerStatus(pollingPickerSessionId);
       }, 3000);
-      return () => clearInterval(interval);
+      return () => {
+        console.log('⏱️ [PhotosPicker] Stopping polling');
+        clearInterval(interval);
+      };
     }
   }, [pollingPickerSessionId, sessionId]);
 
   const handleDeepLink = async ({ url }) => {
-    console.log('🔗 [PhotosPicker] Deep link received:', url);
+    console.log('\n🔗 [PhotosPicker] ========== DEEP LINK RECEIVED ==========');
+    console.log('🔗 [PhotosPicker] Full URL:', url);
     
-    if (url.includes('oauth-callback')) {
-      console.log('✅ [PhotosPicker] OAuth callback detected');
-      const urlParams = new URLSearchParams(url.split('?')[1]);
-      const returnedSessionId = urlParams.get('sessionId');
-      const error = urlParams.get('error');
-      
-      if (error) {
-        console.error('❌ [PhotosPicker] OAuth error:', error);
-        Alert.alert('Error', `Authentication failed: ${error}`);
-        return;
+    try {
+      if (url.includes('oauth-callback')) {
+        console.log('✅ [PhotosPicker] OAuth callback detected');
+        
+        // Parse URL parameters
+        const urlParts = url.split('?');
+        if (urlParts.length < 2) {
+          console.error('❌ [PhotosPicker] No query parameters in URL');
+          return;
+        }
+        
+        const params = new URLSearchParams(urlParts[1]);
+        const returnedSessionId = params.get('sessionId');
+        const success = params.get('success');
+        const error = params.get('error');
+        
+        console.log('📊 [PhotosPicker] Parsed params:', {
+          sessionId: returnedSessionId,
+          success,
+          error
+        });
+        
+        if (error) {
+          console.error('❌ [PhotosPicker] OAuth error:', error);
+          Alert.alert('Authentication Error', `Failed to sign in: ${error}`);
+          setLoading(false);
+          return;
+        }
+        
+        if (returnedSessionId && success === 'true') {
+          console.log('✅ [PhotosPicker] Got valid sessionId:', returnedSessionId);
+          
+          // Store session ID
+          await AsyncStorage.setItem('google_session_id', returnedSessionId);
+          console.log('💾 [PhotosPicker] Stored sessionId in AsyncStorage');
+          
+          // Update state
+          setSessionId(returnedSessionId);
+          setAuthenticated(true);
+          setLoading(false);
+          
+          console.log('✅ [PhotosPicker] Authentication successful!');
+          Alert.alert('Success', 'Signed in successfully!');
+        } else {
+          console.error('❌ [PhotosPicker] Invalid callback parameters');
+          Alert.alert('Error', 'Invalid authentication response');
+          setLoading(false);
+        }
       }
-      
-      if (returnedSessionId) {
-        console.log('🔑 [PhotosPicker] Got sessionId:', returnedSessionId);
-        await AsyncStorage.setItem('google_session_id', returnedSessionId);
-        setSessionId(returnedSessionId);
-        setAuthenticated(true);
-        Alert.alert('Success', 'Signed in successfully!');
-      }
+    } catch (err) {
+      console.error('❌ [PhotosPicker] Error handling deep link:', err);
+      Alert.alert('Error', 'Failed to process authentication');
+      setLoading(false);
     }
   };
 
@@ -96,6 +145,7 @@ export default function PhotosPicker() {
       console.log('💾 [PhotosPicker] Stored sessionId:', storedSessionId);
       
       if (storedSessionId) {
+        console.log('🔍 [PhotosPicker] Verifying stored session...');
         const result = await verifySession(storedSessionId);
         console.log('📥 [PhotosPicker] Verify result:', result);
         
@@ -104,9 +154,11 @@ export default function PhotosPicker() {
           setAuthenticated(true);
           console.log('✅ [PhotosPicker] User authenticated');
         } else {
+          console.log('❌ [PhotosPicker] Session invalid, clearing...');
           await AsyncStorage.removeItem('google_session_id');
-          console.log('❌ [PhotosPicker] Session invalid');
         }
+      } else {
+        console.log('ℹ️ [PhotosPicker] No stored session found');
       }
     } catch (error) {
       console.error('❌ [PhotosPicker] Auth check error:', error);
@@ -114,33 +166,43 @@ export default function PhotosPicker() {
   };
 
   const handleSignIn = async () => {
-    console.log('🚀 [PhotosPicker] Sign in clicked');
+    console.log('\n🚀 [PhotosPicker] ========== SIGN IN STARTED ==========');
     console.log('📱 [PhotosPicker] Platform:', Platform.OS);
     setLoading(true);
     
     try {
-      console.log('📞 [PhotosPicker] Getting OAuth URL...');
+      console.log('📞 [PhotosPicker] Requesting OAuth URL from backend...');
       const { oauthUrl, sessionId: newSessionId } = await getOAuthUrl();
       console.log('✅ [PhotosPicker] Got OAuth URL');
-      console.log('🔗 [PhotosPicker] URL:', oauthUrl.substring(0, 50) + '...');
+      console.log('🔑 [PhotosPicker] New SessionId:', newSessionId);
+      console.log('🔗 [PhotosPicker] OAuth URL:', oauthUrl.substring(0, 100) + '...');
 
       if (Platform.OS === 'web') {
-        console.log('🌐 [PhotosPicker] Web: Redirecting...');
+        console.log('🌐 [PhotosPicker] Web platform: Redirecting window...');
         window.location.href = oauthUrl;
       } else {
-        console.log('📱 [PhotosPicker] Android: Opening WebBrowser...');
+        console.log('📱 [PhotosPicker] Android platform: Opening WebBrowser...');
+        console.log('🔗 [PhotosPicker] Redirect URL: shrutigooglephotospicker://oauth-callback');
+        
         const result = await WebBrowser.openAuthSessionAsync(
           oauthUrl,
           'shrutigooglephotospicker://oauth-callback'
         );
+        
         console.log('📥 [PhotosPicker] WebBrowser result:', result);
         
-        // Note: On Android, the deep link handler will catch the callback
+        if (result.type === 'cancel') {
+          console.log('⚠️ [PhotosPicker] User cancelled sign in');
+          setLoading(false);
+        } else if (result.type === 'dismiss') {
+          console.log('⚠️ [PhotosPicker] Browser dismissed');
+          setLoading(false);
+        }
+        // Note: Success will be handled by the deep link listener
       }
     } catch (error) {
       console.error('❌ [PhotosPicker] Sign in error:', error);
       Alert.alert('Error', `Sign in failed: ${error.message}`);
-    } finally {
       setLoading(false);
     }
   };
@@ -183,7 +245,7 @@ export default function PhotosPicker() {
   };
 
   const checkPickerStatus = async (pickerSessionId) => {
-    console.log('🔍 [PhotosPicker] Polling...');
+    console.log('🔍 [PhotosPicker] Polling picker status...');
     try {
       const result = await pollPickerSession(sessionId, pickerSessionId);
       
@@ -198,7 +260,7 @@ export default function PhotosPicker() {
   };
 
   const fetchSelectedPhotos = async (pickerSessionId) => {
-    console.log('📥 [PhotosPicker] Fetching photos...');
+    console.log('📥 [PhotosPicker] Fetching selected photos...');
     if (!sessionId) return;
 
     setLoading(true);
@@ -347,33 +409,3 @@ const styles = StyleSheet.create({
   photoImage: { width: '100%', height: 150 },
   photoFilename: { padding: 8, fontSize: 12, color: '#666' },
 });
-// Add this function inside PhotosPicker component
-const testBackendConnection = async () => {
-  console.log('🧪 [Test] Testing backend connection from Android...');
-  console.log('🧪 [Test] Platform:', Platform.OS);
-  
-  try {
-    const testUrl = Platform.OS === 'android' 
-      ? 'http://10.0.2.2:3000/health'
-      : 'http://localhost:3000/health';
-    
-    console.log('🧪 [Test] Testing URL:', testUrl);
-    
-    const response = await fetch(testUrl, { timeout: 5000 });
-    const data = await response.json();
-    
-    console.log('✅ [Test] Backend is reachable!', data);
-    Alert.alert('Success', 'Backend is reachable from Android!');
-  } catch (error) {
-    console.error('❌ [Test] Backend NOT reachable!', error.message);
-    Alert.alert('Error', `Backend not reachable: ${error.message}`);
-  }
-};
-
-// Add this button to your JSX (temporarily for testing)
-<TouchableOpacity
-  style={[styles.button, { backgroundColor: '#ff9800' }]}
-  onPress={testBackendConnection}
->
-  <Text style={styles.buttonText}>Test Backend Connection</Text>
-</TouchableOpacity>

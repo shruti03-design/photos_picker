@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Google Drive Picker",
+    "slug": "google-drive-picker",
+    "scheme": "googledrivepicker",
+    "android": {
+      "package": "com.googledrivepicker",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "googledrivepicker",
+              "host": "oauth-callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}

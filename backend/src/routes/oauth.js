@@ -22,66 +22,88 @@ router.get('/url', (req, res) => {
 });
 
 router.get('/callback', async (req, res) => {
-  console.log('\n📍 [OAuth /callback] ========== CALLBACK ==========');
-  console.log('📥 [OAuth /callback] Query:', req.query);
+  console.log('\n📍 [OAuth /callback] ========== CALLBACK RECEIVED ==========');
+  console.log('📥 [OAuth /callback] Query params:', req.query);
+  console.log('📥 [OAuth /callback] Headers:', req.headers);
   
   const { code, state, error } = req.query;
   
   if (error) {
     console.error('❌ [OAuth /callback] OAuth error:', error);
-    return res.redirect(`shrutigooglephotospicker://oauth-callback?error=${error}`);
+    const redirectUrl = `shrutigooglephotospicker://oauth-callback?error=${encodeURIComponent(error)}`;
+    console.log('🔄 [OAuth /callback] Redirecting to error handler:', redirectUrl);
+    return res.redirect(redirectUrl);
   }
 
   if (!code || !state) {
     console.error('❌ [OAuth /callback] Missing code or state');
-    return res.status(400).send('Missing code or state');
+    console.error('❌ [OAuth /callback] Code:', code ? 'present' : 'MISSING');
+    console.error('❌ [OAuth /callback] State:', state ? 'present' : 'MISSING');
+    const redirectUrl = `shrutigooglephotospicker://oauth-callback?error=${encodeURIComponent('missing_parameters')}`;
+    return res.redirect(redirectUrl);
   }
 
   try {
     // Decode state to get sessionId and platform
+    console.log('🔓 [OAuth /callback] Decoding state...');
     const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
     const { sessionId, platform } = stateData;
     
     console.log('🔑 [OAuth /callback] SessionId:', sessionId);
     console.log('📱 [OAuth /callback] Platform:', platform);
-    console.log('🔄 [OAuth /callback] Exchanging code for tokens...');
+    console.log('🔄 [OAuth /callback] Exchanging authorization code for tokens...');
     
     const tokens = await exchangeCodeForTokens(code, sessionId, platform);
-    console.log('✅ [OAuth /callback] Got tokens');
+    console.log('✅ [OAuth /callback] Successfully got tokens');
+    console.log('🔑 [OAuth /callback] Access token length:', tokens.access_token?.length);
     
+    // Store tokens in session
     activeSessions.set(sessionId, tokens);
-    console.log('💾 [OAuth /callback] Stored in session');
+    console.log('💾 [OAuth /callback] Stored tokens in session');
+    console.log('📊 [OAuth /callback] Active sessions count:', activeSessions.size);
 
-    // Platform-aware redirect
+    // Build redirect URL based on platform
     let redirectUrl;
     if (platform === 'android') {
-      redirectUrl = `shrutigooglephotospicker://oauth-callback?sessionId=${sessionId}`;
-      console.log('📱 [OAuth /callback] Android deep link:', redirectUrl);
+      // Use deep link for Android
+      redirectUrl = `shrutigooglephotospicker://oauth-callback?sessionId=${sessionId}&success=true`;
+      console.log('📱 [OAuth /callback] Android deep link redirect');
     } else {
-      redirectUrl = `${config.frontendUrl}/oauth-callback?sessionId=${sessionId}`;
-      console.log('🌐 [OAuth /callback] Web redirect:', redirectUrl);
+      // Use web URL for web platform
+      redirectUrl = `${config.frontendUrl}/oauth-callback?sessionId=${sessionId}&success=true`;
+      console.log('🌐 [OAuth /callback] Web URL redirect');
     }
     
     console.log('🔄 [OAuth /callback] Redirecting to:', redirectUrl);
+    console.log('✅ [OAuth /callback] ========== CALLBACK COMPLETE ==========\n');
+    
     res.redirect(redirectUrl);
   } catch (error) {
-    console.error('❌ [OAuth /callback] Error:', error);
+    console.error('❌ [OAuth /callback] Error during token exchange');
+    console.error('❌ [OAuth /callback] Error message:', error.message);
+    console.error('❌ [OAuth /callback] Error response:', error.response?.data);
     console.error('❌ [OAuth /callback] Stack:', error.stack);
-    res.status(500).send('OAuth callback failed');
+    
+    const redirectUrl = `shrutigooglephotospicker://oauth-callback?error=${encodeURIComponent('token_exchange_failed')}`;
+    console.log('🔄 [OAuth /callback] Redirecting to error handler:', redirectUrl);
+    res.redirect(redirectUrl);
   }
 });
 
 router.get('/verify', (req, res) => {
-  console.log('\n📍 [OAuth /verify] ========== VERIFY ==========');
+  console.log('\n📍 [OAuth /verify] ========== VERIFY REQUEST ==========');
   const { sessionId } = req.query;
   console.log('🔑 [OAuth /verify] SessionId:', sessionId);
 
   if (!sessionId || !activeSessions.has(sessionId)) {
-    console.log('❌ [OAuth /verify] Invalid session');
+    console.log('❌ [OAuth /verify] Invalid or missing session');
+    console.log('📊 [OAuth /verify] Active sessions:', Array.from(activeSessions.keys()));
     return res.json({ authenticated: false });
   }
 
+  const tokens = activeSessions.get(sessionId);
   console.log('✅ [OAuth /verify] Session valid');
+  console.log('🔑 [OAuth /verify] Has access token:', !!tokens.access_token);
   res.json({ authenticated: true });
 });
 
