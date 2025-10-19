@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const crypto = require('crypto');
 const { activeSessions } = require('../services/googleAuth');
 
 console.log('🛣️ [Picker Routes] Module loaded');
@@ -65,6 +64,7 @@ router.get('/poll', async (req, res) => {
     );
 
     console.log('📊 [Picker /poll] mediaItemsSet:', response.data.mediaItemsSet);
+    
     res.json({
       completed: response.data.mediaItemsSet,
       mediaItemsSet: response.data.mediaItemsSet
@@ -75,8 +75,7 @@ router.get('/poll', async (req, res) => {
   }
 });
 
-// Get selected photos
-// Get selected photos
+// Get selected photos - CORRECTED to use mediaItems list endpoint
 router.get('/result', async (req, res) => {
   console.log('\n📍 [Picker /result] ========== GET RESULTS ==========');
   const { sessionId, pickerSessionId } = req.query;
@@ -88,43 +87,81 @@ router.get('/result', async (req, res) => {
   const tokens = activeSessions.get(sessionId);
 
   try {
-    // CORRECT ENDPOINT: mediaItems with sessionId parameter, not as path
-    console.log('📞 [Picker /result] Calling Google Photos Picker API...');
-    console.log('🔑 [Picker /result] Picker SessionId:', pickerSessionId);
-    
+    // The correct endpoint to LIST media items from a picker session
+    console.log('📞 [Picker /result] Listing media items from picker session...');
     const response = await axios.get(
-      'https://photospicker.googleapis.com/v1/mediaItems',  // ← Changed this
+      `https://photospicker.googleapis.com/v1/mediaItems`,
       {
         headers: { 
           'Authorization': `Bearer ${tokens.access_token}`,
-          'Content-Type': 'application/json'
         },
-        params: { 
-          sessionId: pickerSessionId,  // ← Pass as query param
-          pageSize: 100 
+        params: {
+          sessionId: pickerSessionId,
+          pageSize: 100
         }
       }
     );
 
-    console.log('✅ [Picker /result] Got', response.data.mediaItems?.length, 'photos');
+    console.log('📊 [Picker /result] Full API response:', JSON.stringify(response.data, null, 2));
+
+    const mediaItems = response.data.mediaItems || [];
+    console.log('✅ [Picker /result] Got', mediaItems.length, 'media items');
     
-    // Log first photo for debugging
-    if (response.data.mediaItems && response.data.mediaItems.length > 0) {
-      console.log('📸 [Picker /result] First photo:', {
-        id: response.data.mediaItems[0].id,
-        filename: response.data.mediaItems[0].filename,
-        mimeType: response.data.mediaItems[0].mimeType
-      });
+    if (mediaItems.length > 0) {
+      console.log('📸 [Picker /result] First media item:', JSON.stringify(mediaItems[0], null, 2));
     }
+
+    // Add proxy URL to each media item
+    const mediaItemsWithProxy = mediaItems.map(item => ({
+      ...item,
+      proxyUrl: `/api/picker/image/${sessionId}/${encodeURIComponent(item.mediaFile.baseUrl)}`
+    }));
+
+    res.json({ mediaItems: mediaItemsWithProxy });
     
-    res.json({ mediaItems: response.data.mediaItems || [] });
   } catch (error) {
     console.error('❌ [Picker /result] Error:', error.response?.data || error.message);
     console.error('❌ [Picker /result] Status:', error.response?.status);
+    console.error('❌ [Picker /result] Full error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch photos',
       details: error.response?.data || error.message
     });
+  }
+});
+
+// Proxy endpoint to serve images with proper authorization
+router.get('/image/:sessionId/:imageUrl(*)', async (req, res) => {
+  const { sessionId, imageUrl } = req.params;
+  const { w = 300, h = 300 } = req.query;
+
+  if (!sessionId || !activeSessions.has(sessionId)) {
+    return res.status(401).json({ error: 'Invalid session' });
+  }
+
+  const tokens = activeSessions.get(sessionId);
+  const decodedUrl = decodeURIComponent(imageUrl);
+  const fullUrl = `${decodedUrl}=w${w}-h${h}`;
+
+  console.log('🖼️ [Picker /image] Proxying image:', fullUrl.substring(0, 80) + '...');
+
+  try {
+    const response = await axios.get(fullUrl, {
+      headers: {
+        'Authorization': `Bearer ${tokens.access_token}`,
+      },
+      responseType: 'arraybuffer'
+    });
+
+    // Set appropriate headers
+    res.set('Content-Type', response.headers['content-type'] || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(response.data);
+    
+    console.log('✅ [Picker /image] Image proxied successfully');
+  } catch (error) {
+    console.error('❌ [Picker /image] Error:', error.message);
+    res.status(500).json({ error: 'Failed to load image' });
   }
 });
 

@@ -22,14 +22,14 @@ function generateOAuthUrl(platform = 'web') {
   const state = Buffer.from(stateData).toString('base64');
   
   const oauthUrl =
-    `https://accounts.google.com/o/oauth2/v2/auth?` +
-    `response_type=code&` +
-    `client_id=${config.clientId}&` +
-    `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-    `scope=${encodeURIComponent(
-      "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-    )}&` +
-    `access_type=offline&prompt=consent&state=${state}`;
+  `https://accounts.google.com/o/oauth2/v2/auth?` +
+  `response_type=code&` +
+  `client_id=${config.clientId}&` +
+  `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+  `scope=${encodeURIComponent(
+    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly https://www.googleapis.com/auth/photoslibrary.readonly"  // ← Added Photos Library scope
+  )}&` +
+  `access_type=offline&prompt=consent&state=${state}`;
   
   console.log('✅ [GoogleAuth] OAuth URL generated');
   console.log('🔑 [GoogleAuth] SessionId:', sessionId);

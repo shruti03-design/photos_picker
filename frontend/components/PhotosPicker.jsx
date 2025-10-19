@@ -40,13 +40,11 @@ export default function PhotosPicker() {
     console.log('🔄 [PhotosPicker] Mounting component...');
     checkAuthStatus();
     
-    // Set up deep link listener
     console.log('🔗 [PhotosPicker] Setting up deep link listener...');
     
     const subscription = Linking.addEventListener('url', handleDeepLink);
     linkingListenerRef.current = subscription;
     
-    // Check if app was opened via deep link (app was closed)
     Linking.getInitialURL().then(url => {
       if (url) {
         console.log('🔗 [PhotosPicker] App opened with initial URL:', url);
@@ -84,8 +82,6 @@ export default function PhotosPicker() {
     console.log('🔗 [PhotosPicker] Full URL:', url);
     
     try {
-      // Expo may wrap the actual deep link in a `url` query param, e.g.:
-      // exp://.../?url=shrutigooglephotospicker://oauth-callback?sessionId=...
       try {
         const maybeUrl = new URL(url);
         const nested = maybeUrl.searchParams.get('url');
@@ -101,7 +97,6 @@ export default function PhotosPicker() {
         console.log('✅ [PhotosPicker] OAuth callback detected');
         setLastDeepLink(url);
 
-        // Parse URL parameters
         const urlParts = url.split('?');
         if (urlParts.length < 2) {
           console.error('❌ [PhotosPicker] No query parameters in URL');
@@ -130,11 +125,9 @@ export default function PhotosPicker() {
         if (returnedSessionId && success === 'true') {
           console.log('✅ [PhotosPicker] Got valid sessionId:', returnedSessionId);
 
-          // Store session ID
           await AsyncStorage.setItem('google_session_id', returnedSessionId);
           console.log('💾 [PhotosPicker] Stored sessionId in AsyncStorage');
 
-          // Update state
           setSessionId(returnedSessionId);
           setLastDeepLink(url);
           setAuthenticated(true);
@@ -192,14 +185,12 @@ export default function PhotosPicker() {
       const { oauthUrl, sessionId: newSessionId } = await getOAuthUrl();
       console.log('✅ [PhotosPicker] Got OAuth URL');
       console.log('🔑 [PhotosPicker] New SessionId:', newSessionId);
-      console.log('🔗 [PhotosPicker] OAuth URL:', oauthUrl.substring(0, 100) + '...');
 
       if (Platform.OS === 'web') {
         console.log('🌐 [PhotosPicker] Web platform: Redirecting window...');
         window.location.href = oauthUrl;
       } else {
         console.log('📱 [PhotosPicker] Android platform: Opening WebBrowser...');
-        console.log('🔗 [PhotosPicker] Redirect URL: shrutigooglephotospicker://oauth-callback');
         
         const result = await WebBrowser.openAuthSessionAsync(
           oauthUrl,
@@ -215,7 +206,6 @@ export default function PhotosPicker() {
           console.log('⚠️ [PhotosPicker] Browser dismissed');
           setLoading(false);
         }
-        // Note: Success will be handled by the deep link listener
       }
     } catch (error) {
       console.error('❌ [PhotosPicker] Sign in error:', error);
@@ -234,28 +224,39 @@ export default function PhotosPicker() {
   };
 
   const openPhotoPicker = async () => {
-    console.log('📸 [PhotosPicker] Open picker clicked');
+    console.log('\n📸 [PhotosPicker] ========== OPEN PICKER CLICKED ==========');
+    console.log('🔑 [PhotosPicker] SessionId:', sessionId);
+    
     if (!sessionId) {
+      console.error('❌ [PhotosPicker] No session ID!');
       Alert.alert('Error', 'Please sign in first');
       return;
     }
 
     setLoading(true);
+    
     try {
-      const { pickerUri, sessionId: pickerSessionId } = await createPickerSession(sessionId);
-      console.log('✅ [PhotosPicker] Picker session created');
+      console.log('📞 [PhotosPicker] Calling createPickerSession...');
+      const result = await createPickerSession(sessionId);
+      console.log('✅ [PhotosPicker] Picker session result:', result);
+      
+      const { pickerUri, sessionId: pickerSessionId } = result;
       console.log('🔗 [PhotosPicker] Picker URI:', pickerUri);
+      console.log('🔑 [PhotosPicker] Picker SessionId:', pickerSessionId);
 
       if (Platform.OS === 'web') {
+        console.log('🌐 [PhotosPicker] Opening picker in new window...');
         window.open(pickerUri, '_blank');
       } else {
+        console.log('📱 [PhotosPicker] Opening picker with Linking...');
         await Linking.openURL(pickerUri);
       }
       
+      console.log('⏱️ [PhotosPicker] Starting to poll for picker session:', pickerSessionId);
       setPollingPickerSessionId(pickerSessionId);
     } catch (error) {
       console.error('❌ [PhotosPicker] Picker error:', error);
-      Alert.alert('Error', 'Failed to open picker');
+      Alert.alert('Error', `Failed to open picker: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -265,14 +266,16 @@ export default function PhotosPicker() {
     console.log('🔍 [PhotosPicker] Polling picker status...');
     try {
       const result = await pollPickerSession(sessionId, pickerSessionId);
+      console.log('📊 [PhotosPicker] Poll result:', result);
       
-      if (result.completed && result.mediaItemsSet) {
+      if (result.completed === true || result.mediaItemsSet === true) {
         console.log('✅ [PhotosPicker] Selection complete!');
         setPollingPickerSessionId(null);
         await fetchSelectedPhotos(pickerSessionId);
       }
     } catch (error) {
       console.error('❌ [PhotosPicker] Poll error:', error);
+      setPollingPickerSessionId(null);
     }
   };
 
@@ -283,31 +286,76 @@ export default function PhotosPicker() {
     setLoading(true);
     try {
       const result = await getPickerResults(sessionId, pickerSessionId);
-      console.log('✅ [PhotosPicker] Got photos:', result.mediaItems?.length);
+      console.log('✅ [PhotosPicker] Got result:', result);
+      console.log('📸 [PhotosPicker] Number of photos:', result.mediaItems?.length);
+      
       setSelectedPhotos(result.mediaItems || []);
       
       if (result.mediaItems?.length > 0) {
         Alert.alert('Success', `Selected ${result.mediaItems.length} photo(s)`);
+      } else {
+        Alert.alert('Info', 'No photos were selected');
       }
     } catch (error) {
       console.error('❌ [PhotosPicker] Fetch error:', error);
+      Alert.alert('Error', 'Failed to fetch selected photos');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderPhoto = ({ item }) => (
-    <View style={styles.photoItem}>
-      <Image
-        source={{ uri: getMediaItemUrl(item.baseUrl, 300, 300) }}
-        style={styles.photoImage}
-        resizeMode="cover"
-      />
-      <Text style={styles.photoFilename} numberOfLines={1}>
-        {item.filename}
-      </Text>
-    </View>
-  );
+  const renderPhoto = ({ item }) => {
+    console.log('🖼️ [PhotosPicker] Rendering item:', item);
+    
+    let imageUrl = null;
+    
+    // Use proxy URL if available (preferred method)
+    if (item.proxyUrl) {
+      imageUrl = `http://localhost:3000${item.proxyUrl}`;
+      console.log('✅ Using proxy URL');
+    }
+    // Fallback: Photos Picker API returns: item.mediaFile.baseUrl
+    else if (item.mediaFile?.baseUrl) {
+      imageUrl = `${item.mediaFile.baseUrl}=w300-h300`;
+      console.log('✅ Using mediaFile.baseUrl (may expire)');
+    }
+    // Fallback: direct baseUrl 
+    else if (item.baseUrl) {
+      imageUrl = `${item.baseUrl}=w300-h300`;
+      console.log('✅ Using direct baseUrl (may expire)');
+    }
+    
+    if (!imageUrl) {
+      console.warn('⚠️ No valid image URL found for item:', item);
+      // Use a simple colored div instead of external placeholder
+      imageUrl = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect fill="%23ddd" width="300" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-family="sans-serif" font-size="18"%3ENo Image%3C/text%3E%3C/svg%3E';
+    }
+    
+    const filename = item.mediaFile?.filename || item.filename || item.name || `Photo-${item.id?.substring(0, 8)}`;
+    
+    console.log('🖼️ Final:', { filename, imageUrl: imageUrl.substring(0, 80) });
+    
+    return (
+      <View style={styles.photoItem}>
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.photoImage}
+          resizeMode="cover"
+          onError={(e) => {
+            console.error('❌ Image load failed:', filename);
+            console.error('   URL:', imageUrl);
+            console.error('   Error:', e.nativeEvent.error);
+          }}
+          onLoad={() => {
+            console.log('✅ Image loaded:', filename);
+          }}
+        />
+        <Text style={styles.photoFilename} numberOfLines={1}>
+          {filename}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -315,7 +363,6 @@ export default function PhotosPicker() {
         <Text style={styles.title}>Google Photos Picker</Text>
         <Text style={styles.platform}>Platform: {Platform.OS}</Text>
 
-        {/* Debug info */}
         <View style={styles.debugBox}>
           <Text style={styles.debugLabel}>Last deep link:</Text>
           <Text style={styles.debugText} numberOfLines={1}>{lastDeepLink || 'none'}</Text>
@@ -393,10 +440,28 @@ export default function PhotosPicker() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: { padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ddd' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 5, textAlign: 'center' },
-  platform: { fontSize: 12, color: '#666', marginBottom: 15, textAlign: 'center' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5f5f5' 
+  },
+  header: { 
+    padding: 20, 
+    backgroundColor: '#fff', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#ddd' 
+  },
+  title: { 
+    fontSize: 24, 
+    fontWeight: 'bold', 
+    marginBottom: 5, 
+    textAlign: 'center' 
+  },
+  platform: { 
+    fontSize: 12, 
+    color: '#666', 
+    marginBottom: 15, 
+    textAlign: 'center' 
+  },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,11 +471,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f5e9',
     borderRadius: 8,
   },
-  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 8 },
-  statusText: { fontSize: 14, color: '#2e7d32', fontWeight: '600' },
-  button: { backgroundColor: '#4285f4', padding: 15, borderRadius: 8, alignItems: 'center', marginVertical: 5 },
-  signOutButton: { backgroundColor: '#ea4335' },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  statusDot: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    backgroundColor: '#4caf50', 
+    marginRight: 8 
+  },
+  statusText: { 
+    fontSize: 14, 
+    color: '#2e7d32', 
+    fontWeight: '600' 
+  },
+  button: { 
+    backgroundColor: '#4285f4', 
+    padding: 15, 
+    borderRadius: 8, 
+    alignItems: 'center', 
+    marginVertical: 5 
+  },
+  signOutButton: { 
+    backgroundColor: '#ea4335' 
+  },
+  buttonText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '600' 
+  },
   pollingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -420,10 +507,23 @@ const styles = StyleSheet.create({
     margin: 15,
     borderRadius: 8,
   },
-  pollingText: { marginLeft: 10, fontSize: 14, color: '#1976d2' },
-  photosSection: { padding: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 15 },
-  photoRow: { justifyContent: 'space-between', marginBottom: 15 },
+  pollingText: { 
+    marginLeft: 10, 
+    fontSize: 14, 
+    color: '#1976d2' 
+  },
+  photosSection: { 
+    padding: 15 
+  },
+  sectionTitle: { 
+    fontSize: 18, 
+    fontWeight: '600', 
+    marginBottom: 15 
+  },
+  photoRow: { 
+    justifyContent: 'space-between', 
+    marginBottom: 15 
+  },
   photoItem: {
     width: '48%',
     backgroundColor: '#fff',
@@ -431,8 +531,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 10,
   },
-  photoImage: { width: '100%', height: 150 },
-  photoFilename: { padding: 8, fontSize: 12, color: '#666' },
+  photoImage: { 
+    width: '100%', 
+    height: 150 
+  },
+  photoFilename: { 
+    padding: 8, 
+    fontSize: 12, 
+    color: '#666' 
+  },
   debugBox: {
     marginTop: 10,
     padding: 8,
@@ -441,6 +548,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ffe082',
   },
-  debugLabel: { fontSize: 10, color: '#666' },
-  debugText: { fontSize: 12, color: '#333' },
+  debugLabel: { 
+    fontSize: 10, 
+    color: '#666' 
+  },
+  debugText: { 
+    fontSize: 12, 
+    color: '#333' 
+  },
 });
